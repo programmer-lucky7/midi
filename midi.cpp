@@ -6,6 +6,7 @@ LRESULT CALLBACK WndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 TCHAR szClsName[] = TEXT("LUCKY7_MIDI");
 TCHAR szAppName[] = TEXT("MIDI Keyboard by Lucky7");
 HINSTANCE g_hInst;
+int g_nNoteOffset = 0;
 unsigned char matrix[256] = {
 	 0,  0,  0,  0,  0,  0,  0,  0, 84, 52,  0,  0,  0, 83,  0,  0,
 	 0,  0,  0,  0, 48,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
@@ -58,11 +59,17 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine, int 
 }
 
 void noteOn(HMIDIOUT hmo, unsigned char note) {
-	midiOutShortMsg(hmo, 0x007F0090 | (note << 8));
+	if ((int) note + g_nNoteOffset >= 0 && (int) note + g_nNoteOffset < 256) {
+		note += g_nNoteOffset;
+		midiOutShortMsg(hmo, 0x007F0090 | (note << 8));
+	}
 }
 
 void noteOff(HMIDIOUT hmo, unsigned char note) {
-	midiOutShortMsg(hmo, 0x007F0080 | (note << 8));
+	if ((int) note + g_nNoteOffset >= 0 && (int) note + g_nNoteOffset < 256) {
+		note += g_nNoteOffset;
+		midiOutShortMsg(hmo, 0x007F0080 | (note << 8));
+	}
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -75,12 +82,26 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		return 0;
 	case WM_KEYDOWN:
 		if ((lParam >> 30) & 1) return 0; // Prevent auto-repeat
-		wParam = wParam & 0xFF;
-		if (matrix[wParam]) noteOn(hmo, matrix[wParam]);
+		switch(LOWORD(wParam)) {
+		case VK_LEFT: g_nNoteOffset -= 12; break; // 1-octave down
+		case VK_RIGHT: g_nNoteOffset += 12; break; // 1-octave up
+		case VK_DOWN: g_nNoteOffset -= 1; break; // half-note down
+		case VK_UP: g_nNoteOffset += 1; break; // half-note up
+		default:
+			wParam = wParam & 0xFF;
+			if (matrix[wParam]) noteOn(hmo, matrix[wParam]);
+		}
 		return 0;
 	case WM_KEYUP:
-		wParam = wParam & 0xFF;
-		if (matrix[wParam]) noteOff(hmo, matrix[wParam]);
+		switch(LOWORD(wParam)) {
+		case VK_LEFT:
+		case VK_RIGHT:
+		case VK_DOWN:
+		case VK_UP: break; // ignore left, right, down, up arrow key up event
+		default:
+			wParam = wParam & 0xFF;
+			if (matrix[wParam]) noteOff(hmo, matrix[wParam]);
+		}
 		return 0;
 	case WM_PAINT:
 		hDC = GetDC(hWnd);
