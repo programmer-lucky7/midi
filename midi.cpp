@@ -74,6 +74,7 @@ void noteOff(HMIDIOUT hmo, unsigned char note) {
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	HDC hDC;
+	PAINTSTRUCT ps;
 	static HMIDIOUT hmo;
 
 	switch(uMsg) {
@@ -104,9 +105,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		}
 		return 0;
 	case WM_PAINT:
-		hDC = GetDC(hWnd);
+		hDC = BeginPaint(hWnd, &ps);
 		TextOut(hDC, 0, 0, "MIDI Keyboard by Lucky7", 23);
-		ReleaseDC(hWnd, hDC);
+		EndPaint(hWnd, &ps);
 		return 0;
 	case WM_DESTROY:
 		midiOutClose(hmo);
