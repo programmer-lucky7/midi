@@ -1,5 +1,8 @@
 #include <windows.h>
 #include <mmsystem.h>
+#ifndef WM_INPUT
+#include "rawinput.h"
+#endif
 
 LRESULT CALLBACK WndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
@@ -35,6 +38,13 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine, int 
 	HWND hWnd;
 	MSG msg;
 
+#ifdef __RAWINPUT_H_
+#include "rawinput.inc"
+#else
+        MessageBox(NULL, TEXT("Not included"), TEXT("DBG"), 0);
+        return 0;
+#endif
+
 	g_hInst = hInst;
 	wc.cbSize = sizeof (WNDCLASSEX);
 	wc.style = CS_HREDRAW | CS_VREDRAW;
@@ -62,18 +72,22 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine, int 
 	return msg.wParam;
 }
 
-void noteOn(HMIDIOUT hmo, unsigned char note) {
+void noteOn(HMIDIOUT hmo, unsigned char note, unsigned char channel) {
 	if ((int) note + g_nNoteOffset >= 0 && (int) note + g_nNoteOffset < 128) {
 		note += g_nNoteOffset;
-		midiOutShortMsg(hmo, 0x007F0090 | (note << 8));
+		midiOutShortMsg(hmo, 0x007F0090 | (note << 8) | channel);
 	}
 }
 
-void noteOff(HMIDIOUT hmo, unsigned char note) {
+void noteOff(HMIDIOUT hmo, unsigned char note, unsigned char channel) {
 	if ((int) note + g_nNoteOffset >= 0 && (int) note + g_nNoteOffset < 128) {
 		note += g_nNoteOffset;
-		midiOutShortMsg(hmo, 0x007F0080 | (note << 8));
+		midiOutShortMsg(hmo, 0x007F0080 | (note << 8) | channel);
 	}
+}
+
+void setPatch(HMIDIOUT hmo, unsigned char patch, unsigned char channel) {
+        midiOutShortMsg(hmo, (patch << 8) | 0xC0 | channel);
 }
 
 void inline drumOn(HMIDIOUT hmo, unsigned char note) {
@@ -87,12 +101,46 @@ void inline drumOff(HMIDIOUT hmo, unsigned char note) {
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	HDC hDC;
 	PAINTSTRUCT ps;
+	RAWINPUTDEVICE rid;
+	RAWINPUT ri;
+	UINT uiSize = sizeof(ri);
 	static HMIDIOUT hmo;
+        static int nNumKeyboardsDetected = 0;
+        static HANDLE hKeyboardList[10];
+        static int nKeyboardID;
 
 	switch(uMsg) {
 	case WM_CREATE:
 		midiOutOpen(&hmo, 0xFFFFFFFFU, 0, 0, CALLBACK_NULL);
+                ZeroMemory(&rid, sizeof(rid));
+                rid.usUsagePage = 0x01;
+                rid.usUsage = 0x06;
+                rid.dwFlags = RIDEV_INPUTSINK;
+                rid.hwndTarget = hWnd;
+                RegisterRawInputDevices(&rid, 1, sizeof(RAWINPUTDEVICE));
+		setPatch(hmo, 0, 0);
+		setPatch(hmo, 33, 1);
 		return 0;
+        case WM_INPUT:
+                if (GetRawInputData) {
+                        GetRawInputData((HRAWINPUT) lParam, RID_INPUT, &ri, &uiSize, sizeof(RAWINPUTHEADER));
+                        if (ri.header.dwType == RIM_TYPEKEYBOARD) {
+                                int i;
+                                nKeyboardID = -1;
+                                for (i = 0; i < nNumKeyboardsDetected; i++) {
+                                        if (ri.header.hDevice == hKeyboardList[i]) {
+                                                nKeyboardID = i;
+                                                break;
+                                        }
+                                }
+                                if (nKeyboardID == -1) {
+                                        hKeyboardList[nNumKeyboardsDetected] = ri.header.hDevice;
+                                        nKeyboardID = nNumKeyboardsDetected;
+                                        nNumKeyboardsDetected++;
+                                }
+                        }
+                }
+                break;
 	case WM_SYSKEYDOWN:
 		switch(LOWORD(wParam)) {
 		case VK_F10:
@@ -129,7 +177,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			break;
 		default:
 			wParam = wParam & 0xFF;
-			if (matrix[wParam]) noteOn(hmo, matrix[wParam]);
+			if (matrix[wParam]) noteOn(hmo, matrix[wParam], nKeyboardID);
 		}
 		return 0;
 	case WM_KEYUP:
@@ -153,7 +201,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			break;
 		default:
 			wParam = wParam & 0xFF;
-			if (matrix[wParam]) noteOff(hmo, matrix[wParam]);
+			if (matrix[wParam]) noteOff(hmo, matrix[wParam], nKeyboardID);
 		}
 		return 0;
 	case WM_PAINT:
@@ -163,6 +211,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		return 0;
 	case WM_DESTROY:
 		midiOutClose(hmo);
+                ZeroMemory(&rid, sizeof(rid));
+                rid.usUsagePage = 0x01;
+                rid.usUsage = 0x06;
+                rid.dwFlags = RIDEV_REMOVE;
+                rid.hwndTarget = hWnd;
+                RegisterRawInputDevices(&rid, 1, sizeof(RAWINPUTDEVICE));
 		PostQuitMessage(0);
 		return 0;
 	}
