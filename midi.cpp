@@ -40,9 +40,6 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine, int 
 
 #ifdef __RAWINPUT_H_
 #include "rawinput.inc"
-#else
-        MessageBox(NULL, TEXT("Not included"), TEXT("DBG"), 0);
-        return 0;
 #endif
 
 	g_hInst = hInst;
@@ -73,15 +70,13 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine, int 
 }
 
 void noteOn(HMIDIOUT hmo, unsigned char note, unsigned char channel) {
-	if ((int) note + g_nNoteOffset >= 0 && (int) note + g_nNoteOffset < 128) {
-		note += g_nNoteOffset;
+	if (note < 128) {
 		midiOutShortMsg(hmo, 0x007F0090 | (note << 8) | channel);
 	}
 }
 
 void noteOff(HMIDIOUT hmo, unsigned char note, unsigned char channel) {
-	if ((int) note + g_nNoteOffset >= 0 && (int) note + g_nNoteOffset < 128) {
-		note += g_nNoteOffset;
+	if (note < 128) {
 		midiOutShortMsg(hmo, 0x007F0080 | (note << 8) | channel);
 	}
 }
@@ -104,10 +99,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	RAWINPUTDEVICE rid;
 	RAWINPUT ri;
 	UINT uiSize = sizeof(ri);
+	HBRUSH hPrevBrush;
+	RECT rt;
+	int i;
+	int black_table[] = { 1, 1, 0, 1, 1, 1, 0 };
 	static HMIDIOUT hmo;
-        static int nNumKeyboardsDetected = 0;
-        static HANDLE hKeyboardList[10];
-        static int nKeyboardID;
+	static int nNumKeyboardsDetected = 0;
+	static HANDLE hKeyboardList[10];
+	static int nKeyboardID;
+	static HBRUSH hbrBlack = CreateSolidBrush(0x00000000);
+	static HBRUSH hbrRed = CreateSolidBrush(0x000000FF);
+	static HBRUSH hbrWhite = (HBRUSH) GetStockObject(WHITE_BRUSH);
+	static HBRUSH hbrNull = (HBRUSH) GetStockObject(NULL_BRUSH);
 
 	switch(uMsg) {
 	case WM_CREATE:
@@ -120,6 +123,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 RegisterRawInputDevices(&rid, 1, sizeof(RAWINPUTDEVICE));
 		setPatch(hmo, 0, 0);
 		setPatch(hmo, 33, 1);
+		SetRect(&rt, 0, 0, 750, 172);
+		AdjustWindowRect(&rt, WS_OVERLAPPEDWINDOW, FALSE);
+		SetWindowPos(hWnd, NULL, 0, 0, rt.right - rt.left, rt.bottom - rt.top, SWP_NOMOVE);
 		return 0;
         case WM_INPUT:
                 if (GetRawInputData) {
@@ -177,7 +183,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			break;
 		default:
 			wParam = wParam & 0xFF;
-			if (matrix[wParam]) noteOn(hmo, matrix[wParam], nKeyboardID);
+			if (matrix[wParam]) {
+				int white_table[] = { 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1 };
+				int offsets[] = { 0, 7, 10, 17, 20, 30, 37, 40, 47, 50, 57, 60 };
+				int note = matrix[wParam] + g_nNoteOffset;
+				noteOn(hmo, note, nKeyboardID);
+				hDC = GetDC(hWnd);
+				hPrevBrush = (HBRUSH) SelectObject(hDC, hbrRed);
+				if (white_table[note % 12]) {
+					Ellipse(hDC, note / 12 * 70 + offsets[note % 12], 100, note / 12 * 70 + offsets[note % 12] + 10, 110);
+				} else {
+					Ellipse(hDC, note / 12 * 70 + offsets[note % 12], 40, note / 12 * 70 + offsets[note % 12] + 7, 47);
+				}
+				SelectObject(hDC, hPrevBrush);
+				ReleaseDC(hWnd, hDC);
+			}
 		}
 		return 0;
 	case WM_KEYUP:
@@ -201,12 +221,39 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			break;
 		default:
 			wParam = wParam & 0xFF;
-			if (matrix[wParam]) noteOff(hmo, matrix[wParam], nKeyboardID);
+			if (matrix[wParam]) {
+				int white_table[] = { 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1 };
+				int offsets[] = { 0, 7, 10, 17, 20, 30, 37, 40, 47, 50, 57, 60 };
+				int note = matrix[wParam] + g_nNoteOffset;
+				noteOff(hmo, note, nKeyboardID);
+				hDC = GetDC(hWnd);
+				if (white_table[note % 12]) {
+					HPEN hPrevPen = (HPEN) SelectObject(hDC, GetStockObject(NULL_PEN));
+					hPrevBrush = (HBRUSH) SelectObject(hDC, hbrWhite);
+					Ellipse(hDC, note / 12 * 70 + offsets[note % 12], 100, note / 12 * 70 + offsets[note % 12] + 11, 111);
+					SelectObject(hDC, hPrevPen);
+				} else {
+					hPrevBrush = (HBRUSH) SelectObject(hDC, hbrBlack);
+					Ellipse(hDC, note / 12 * 70 + offsets[note % 12], 40, note / 12 * 70 + offsets[note % 12] + 7, 47);
+				}
+				SelectObject(hDC, hPrevBrush);
+				ReleaseDC(hWnd, hDC);
+			}
 		}
 		return 0;
 	case WM_PAINT:
 		hDC = BeginPaint(hWnd, &ps);
-		TextOut(hDC, 0, 0, "MIDI Keyboard by Lucky7", 23);
+		//TextOut(hDC, 0, 0, "MIDI Keyboard by Lucky7", 23);
+		Rectangle(hDC, 0, 0, 750, 120);
+		hPrevBrush = (HBRUSH) SelectObject(hDC, hbrNull);
+		for (i = 0; i < 74; i++) {
+			Rectangle(hDC, i * 10, 0, i * 10 + 11, 120);
+			if (black_table[i % 7]) {
+				RECT rt = { i * 10 + 7, 0, i * 10 + 14, 70 };
+				FillRect(hDC, &rt, hbrBlack);
+			}
+		}
+		SelectObject(hDC, hPrevBrush);
 		EndPaint(hWnd, &ps);
 		return 0;
 	case WM_DESTROY:
