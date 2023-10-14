@@ -103,14 +103,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	RECT rt;
 	int i;
 	int black_table[] = { 1, 1, 0, 1, 1, 1, 0 };
+	int white_table[] = { 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1 };
+	int offsets[] = { 0, 7, 10, 17, 20, 30, 37, 40, 47, 50, 57, 60 };
 	static HMIDIOUT hmo;
 	static int nNumKeyboardsDetected = 0;
 	static HANDLE hKeyboardList[10];
 	static int nKeyboardID;
-	static HBRUSH hbrBlack = CreateSolidBrush(0x00000000);
-	static HBRUSH hbrRed = CreateSolidBrush(0x000000FF);
+	static HPEN hNullPen = (HPEN) GetStockObject(NULL_PEN);
+	static HBRUSH hbrBlack = (HBRUSH) GetStockObject(BLACK_BRUSH);
 	static HBRUSH hbrWhite = (HBRUSH) GetStockObject(WHITE_BRUSH);
 	static HBRUSH hbrNull = (HBRUSH) GetStockObject(NULL_BRUSH);
+	static HBRUSH hbrRed = CreateSolidBrush(0x000000FF);
 
 	switch(uMsg) {
 	case WM_CREATE:
@@ -184,8 +187,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		default:
 			wParam = wParam & 0xFF;
 			if (matrix[wParam]) {
-				int white_table[] = { 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1 };
-				int offsets[] = { 0, 7, 10, 17, 20, 30, 37, 40, 47, 50, 57, 60 };
 				int note = matrix[wParam] + g_nNoteOffset;
 				noteOn(hmo, note, nKeyboardID);
 				hDC = GetDC(hWnd);
@@ -222,13 +223,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		default:
 			wParam = wParam & 0xFF;
 			if (matrix[wParam]) {
-				int white_table[] = { 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1 };
-				int offsets[] = { 0, 7, 10, 17, 20, 30, 37, 40, 47, 50, 57, 60 };
 				int note = matrix[wParam] + g_nNoteOffset;
 				noteOff(hmo, note, nKeyboardID);
 				hDC = GetDC(hWnd);
 				if (white_table[note % 12]) {
-					HPEN hPrevPen = (HPEN) SelectObject(hDC, GetStockObject(NULL_PEN));
+					HPEN hPrevPen = (HPEN) SelectObject(hDC, hNullPen);
 					hPrevBrush = (HBRUSH) SelectObject(hDC, hbrWhite);
 					Ellipse(hDC, note / 12 * 70 + offsets[note % 12], 100, note / 12 * 70 + offsets[note % 12] + 11, 111);
 					SelectObject(hDC, hPrevPen);
